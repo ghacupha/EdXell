@@ -1,0 +1,279 @@
+Another way to remove VBA project password is;
+
+Open xls file with a hex editor. (ie. Hex Edit http://www.hexedit.com/)
+Search for DPB
+Replace DPB to DPx
+Save file.
+Open file in Excel.
+Click "Yes" if you get any message box.
+Set new password from VBA Project Properties.
+Close and open again file, then type your new password to unprotect.
+UPDATE: For Excel 2010 (Works for MS Office Pro Plus 2010 [14.0.6023.1000 64bit]),
+
+================================================
+This removes worksheet password
+=================================================
+
+Open the XLSX file with 7zip
+If workbook is protected:
+
+Browse the folder xl
+If the workbook is protected, right click workbook.xml and select Edit
+Find the portion <workbookProtection workbookPassword="XXXX" lockStructure="1"/> (XXXX is your encrypted password)
+Remove XXXX part. (ie. <workbookProtection workbookPassword="" lockStructure="1"/>)
+Save the file.
+When 7zip asks you to update the archive, say Yes.
+Close 7zip and re-open your XLSX.
+Click Protect Workbook on Review tab.
+Optional: Save your file.
+If worksheets are protected:
+
+================================================
+This is deprecated
+=================================================
+
+Browse to xl/worksheets/ folder.
+Right click the Sheet1.xml, sheet2.xml, etc and select Edit.
+Find the portion <sheetProtection password="XXXX" sheet="1" objects="1" scenarios="1" />
+Remove the encrypted password (ie. <sheetProtection password="" sheet="1" objects="1" scenarios="1" />)
+Save the file.
+When 7zip asks you to update the archive, say Yes.
+Close 7zip and re-open your XLSX.
+Click Unprotect Sheet on Review tab.
+Optional: Save your file.
+
+
+================================================
+This actually works
+=================================================
+I found another way to solve this one to avoid password of VBA Project,with out loosing excel password.
+
+use Hex-editor XVI32 for the process
+
+if the file type is XLSM files:
+
+Open the XLSM file with 7-Zip (right click -> 7-Zip -> Open archive).
+Copy the xl/vbaProject.bin file out of the file (you can drag and drop from 7-Zip), don't close 7-Zip
+Open the vbaProject.bin file with HexEdit
+Search for "DPB=" and replace it with "DPx="
+Save the file
+Copy this file back into 7-Zip (again, drag and drop works)
+Open the XLSX file in Excel, if prompted to "Continue Loading Project", click Yes. If prompted with errors, click OK.
+Press Alt+ F11 to open the VBA editor.
+While press it will show error “Unexpected error (40230)”, just click OK (6 or 7 times) until it goes away.
+Then it will open Automatically
+
+==============================================================================================================================
+This is apparently tested
+===============================================================================================================================
+You can try this direct VBA approach which doesn't require HEX editing. It will work for any files (*.xls, *.xlsm, *.xlam ...).
+
+Tested and works on
+
+Excel 2007
+Excel 2010
+Excel 2013 - 32 bit version.
+Excel 2016 - 32 bit version.
+
+Looking for 64 bit version? See https://stackoverflow.com/a/31005696/4342479
+
+how it works
+
+I will try my best to explain how it works - please excuse my english.
+
+The VBE will call a system function to create the password dialog box.
+If user enters the right password and click OK, this function returns 1. If user enters the wrong password or click Cancel, this function returns 0.
+After the dialog box is closed, the VBE checks the returned value of the system function
+if this value is 1, the VBE will "think" that the password is right, hence the locked VBA project will be opened.
+The code below swaps the memory of the original function used to display the password dialog with a user defined function that will always return 1 when being called.
+
+using the code
+
+Open the file(s) that contain your locked VBA Projects
+Create a new xlsm file and store this code in Module1
+
+code credited to Siwtom (nick name), a Vietnamese developer
+
+===================================================================================
+32 BIT VERSIONS
+===================================================================================
+
+=======================
+module 1 code
+=======================
+Option Explicit
+
+Private Const PAGE_EXECUTE_READWRITE = &H40
+
+Private Declare Sub MoveMemory Lib "kernel32" Alias "RtlMoveMemory" _
+        (Destination As Long, Source As Long, ByVal Length As Long)
+
+Private Declare Function VirtualProtect Lib "kernel32" (lpAddress As Long, _
+        ByVal dwSize As Long, ByVal flNewProtect As Long, lpflOldProtect As Long) As Long
+
+Private Declare Function GetModuleHandleA Lib "kernel32" (ByVal lpModuleName As String) As Long
+
+Private Declare Function GetProcAddress Lib "kernel32" (ByVal hModule As Long, _
+        ByVal lpProcName As String) As Long
+
+Private Declare Function DialogBoxParam Lib "user32" Alias "DialogBoxParamA" (ByVal hInstance As Long, _
+        ByVal pTemplateName As Long, ByVal hWndParent As Long, _
+        ByVal lpDialogFunc As Long, ByVal dwInitParam As Long) As Integer
+
+Dim HookBytes(0 To 5) As Byte
+Dim OriginBytes(0 To 5) As Byte
+Dim pFunc As Long
+Dim Flag As Boolean
+
+Private Function GetPtr(ByVal Value As Long) As Long
+    GetPtr = Value
+End Function
+
+Public Sub RecoverBytes()
+    If Flag Then MoveMemory ByVal pFunc, ByVal VarPtr(OriginBytes(0)), 6
+End Sub
+
+Public Function Hook() As Boolean
+    Dim TmpBytes(0 To 5) As Byte
+    Dim p As Long
+    Dim OriginProtect As Long
+
+    Hook = False
+
+    pFunc = GetProcAddress(GetModuleHandleA("user32.dll"), "DialogBoxParamA")
+
+
+    If VirtualProtect(ByVal pFunc, 6, PAGE_EXECUTE_READWRITE, OriginProtect) <> 0 Then
+
+        MoveMemory ByVal VarPtr(TmpBytes(0)), ByVal pFunc, 6
+        If TmpBytes(0) <> &H68 Then
+
+            MoveMemory ByVal VarPtr(OriginBytes(0)), ByVal pFunc, 6
+
+            p = GetPtr(AddressOf MyDialogBoxParam)
+
+            HookBytes(0) = &H68
+            MoveMemory ByVal VarPtr(HookBytes(1)), ByVal VarPtr(p), 4
+            HookBytes(5) = &HC3
+
+            MoveMemory ByVal pFunc, ByVal VarPtr(HookBytes(0)), 6
+            Flag = True
+            Hook = True
+        End If
+    End If
+End Function
+
+Private Function MyDialogBoxParam(ByVal hInstance As Long, _
+        ByVal pTemplateName As Long, ByVal hWndParent As Long, _
+        ByVal lpDialogFunc As Long, ByVal dwInitParam As Long) As Integer
+    If pTemplateName = 4070 Then
+        MyDialogBoxParam = 1
+    Else
+        RecoverBytes
+        MyDialogBoxParam = DialogBoxParam(hInstance, pTemplateName, _
+                           hWndParent, lpDialogFunc, dwInitParam)
+        Hook
+    End If
+End Function
+
+================
+module 2 code
+================
+Sub unprotected()
+    If Hook Then
+        MsgBox "VBA Project is unprotected!", vbInformation, "*****"
+    End If
+End Sub
+
+===================================================================================
+64 BIT VERSIONS
+===================================================================================
+
+===============
+Module 1
+===============
+Option Explicit
+
+Private Const PAGE_EXECUTE_READWRITE = &H40
+
+Private Declare PtrSafe Sub MoveMemory Lib "kernel32" Alias "RtlMoveMemory" _
+(Destination As LongPtr, Source As LongPtr, ByVal Length As LongPtr)
+
+Private Declare PtrSafe Function VirtualProtect Lib "kernel32" (lpAddress As LongPtr, _
+ByVal dwSize As LongPtr, ByVal flNewProtect As LongPtr, lpflOldProtect As LongPtr) As LongPtr
+
+Private Declare PtrSafe Function GetModuleHandleA Lib "kernel32" (ByVal lpModuleName As String) As LongPtr
+
+Private Declare PtrSafe Function GetProcAddress Lib "kernel32" (ByVal hModule As LongPtr, _
+ByVal lpProcName As String) As LongPtr
+
+Private Declare PtrSafe Function DialogBoxParam Lib "user32" Alias "DialogBoxParamA" (ByVal hInstance As LongPtr, _
+ByVal pTemplateName As LongPtr, ByVal hWndParent As LongPtr, _
+ByVal lpDialogFunc As LongPtr, ByVal dwInitParam As LongPtr) As Integer
+
+Dim HookBytes(0 To 5) As Byte
+Dim OriginBytes(0 To 5) As Byte
+Dim pFunc As LongPtr
+Dim Flag As Boolean
+
+Private Function GetPtr(ByVal Value As LongPtr) As LongPtr
+    GetPtr = Value
+End Function
+
+Public Sub RecoverBytes()
+    If Flag Then MoveMemory ByVal pFunc, ByVal VarPtr(OriginBytes(0)), 6
+End Sub
+
+Public Function Hook() As Boolean
+    Dim TmpBytes(0 To 5) As Byte
+    Dim p As LongPtr
+    Dim OriginProtect As LongPtr
+
+    Hook = False
+
+    pFunc = GetProcAddress(GetModuleHandleA("user32.dll"), "DialogBoxParamA")
+
+
+    If VirtualProtect(ByVal pFunc, 6, PAGE_EXECUTE_READWRITE, OriginProtect) <> 0 Then
+
+        MoveMemory ByVal VarPtr(TmpBytes(0)), ByVal pFunc, 6
+        If TmpBytes(0) <> &H68 Then
+
+            MoveMemory ByVal VarPtr(OriginBytes(0)), ByVal pFunc, 6
+
+            p = GetPtr(AddressOf MyDialogBoxParam)
+
+            HookBytes(0) = &H68
+            MoveMemory ByVal VarPtr(HookBytes(1)), ByVal VarPtr(p), 4
+            HookBytes(5) = &HC3
+
+            MoveMemory ByVal pFunc, ByVal VarPtr(HookBytes(0)), 6
+            Flag = True
+            Hook = True
+        End If
+    End If
+End Function
+
+Private Function MyDialogBoxParam(ByVal hInstance As LongPtr, _
+ByVal pTemplateName As LongPtr, ByVal hWndParent As LongPtr, _
+ByVal lpDialogFunc As LongPtr, ByVal dwInitParam As LongPtr) As Integer
+
+    If pTemplateName = 4070 Then
+        MyDialogBoxParam = 1
+    Else
+        RecoverBytes
+        MyDialogBoxParam = DialogBoxParam(hInstance, pTemplateName, _
+                   hWndParent, lpDialogFunc, dwInitParam)
+        Hook
+    End If
+End Function
+
+===================
+module 2
+===================
+Sub unprotected()
+    If Hook Then
+        MsgBox "VBA Project is unprotected!", vbInformation, "*****"
+    End If
+End Sub
+

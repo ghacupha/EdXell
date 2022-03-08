@@ -1,0 +1,17 @@
+Sub protect_all_sheets()
+top:
+pass = InputBox("password?")
+repass = InputBox("Verify Password")
+If Not (pass = repass) Then
+MsgBox "you made a boo boo"
+GoTo top
+End If
+For i = 1 To Worksheets.Count
+If Worksheets(i).ProtectContents = True Then GoTo oops
+Next
+For Each s In ActiveWorkbook.Worksheets
+s.Protect Password:=pass
+Next
+Exit Sub
+oops: MsgBox "I think you have some sheets that are already protected. Please unprotect all sheets then running this Macro."
+End Sub
